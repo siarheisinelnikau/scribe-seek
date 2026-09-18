@@ -1,0 +1,49 @@
+[package]
+name = "scribe-seek"
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.88"
+description = "Local audio transcription with searchable, playable timestamps"
+license = "MIT"
+repository = "https://github.com/siarheisinelnikau/scribe-seek"
+
+[dependencies]
+anyhow = "1.0"
+audiopus_sys = { version = "0.2.2", features = ["static"] }
+eframe = { version = "0.33.3", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+rfd = "0.15.4"
+ogg = "0.9.2"
+opus = "0.3.1"
+rodio = { version = "0.21.1", default-features = false, features = ["playback"] }
+rubato = "0.16.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+semver = "1.0"
+sha2 = "0.10"
+symphonia = { version = "0.5.5", features = ["all"] }
+ureq = "3.5"
+whisper-rs = "0.16.0"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tempfile = "3.27"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev.package.whisper-rs-sys]
+opt-level = 3
+
+[profile.dev.package.audiopus_sys]
+opt-level = 3
+
+[profile.dev.package.rubato]
+opt-level = 3
+
+[profile.dev.package.rustfft]
+opt-level = 3
