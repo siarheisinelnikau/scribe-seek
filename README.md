@@ -156,6 +156,9 @@ Other branches and pull requests only run validation.
 An explicitly authorized release repair can use a `Replace-Release-Commit: <SHA>`
 commit trailer. It must match the existing release commit; the workflow hides the
 release, moves its tag and verifies replacement assets before publishing it again.
+A `Repair-Release-Tag: v<version>` commit trailer restores a detached release tag
+through a dedicated workflow job. The existing tag must match the release commit;
+verified assets are preserved.
 
 The updater requires a separate **`scribe-seek-windows-x64.exe`** release asset with
 a SHA-256 digest in the GitHub API. The ZIP is available for manual downloads.
