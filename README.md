@@ -4,10 +4,18 @@ A native Rust desktop app that turns long audio or video recordings into searcha
 transcripts. Drop a file, find a phrase, and click a segment to play from its timestamp.
 Speech recognition runs locally with Whisper / whisper.cpp.
 
+**[Download ScribeSeek-v0.1.1.exe](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.1.1/ScribeSeek-v0.1.1.exe)**
+· [Portable ZIP](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.1.1/ScribeSeek-v0.1.1.zip)
+· [All releases](https://github.com/siarheisinelnikau/scribe-seek/releases)
+
+Windows 10/11 x64. No installer, Python or FFmpeg required.
+
+![Scribe Seek searching an actual JFK sample transcript, with matching phrases and timestamp playback](docs/screenshots/transcript-search.png)
+
 ## Quick start
 
 1. Download the standalone Windows EXE from [Releases](https://github.com/siarheisinelnikau/scribe-seek/releases/latest).
-2. Run `scribe-seek-windows-x64.exe`.
+2. Run `ScribeSeek-v0.1.1.exe`.
 3. Choose a model and select **Download model**. Tiny is useful for a quick trial;
    Small generally provides better recognition. Downloads are verified by size and SHA-256.
 4. Drop a recording into the window or select **New recording**.
@@ -78,6 +86,8 @@ The app will store its data in `scribe-seek-data` beside it. You can also set
 `SCRIBE_SEEK_DATA_DIR` to choose a data directory explicitly.
 Library files are ordinary, unencrypted JSON. Original recordings are not copied.
 
+![Scribe Seek Settings showing interface language, model storage and the data folder](docs/screenshots/settings-storage.png)
+
 ## In-app updates
 
 Open **Settings → Updates → Check for updates**. Automatic startup checks are
@@ -147,7 +157,8 @@ the Tiny model in `.test-data/data/models/`.
 
 GitHub Actions checks formatting, translations, Clippy and tests, builds the Windows
 EXE, verifies the native update helper, and uploads EXE/ZIP/SHA-256 artifacts.
-To publish a version, update `Cargo.toml` and `Cargo.lock` and push to `main`.
+To publish a version, update `Cargo.toml` and `Cargo.lock`, write reviewed English
+release notes in `releases/v<version>.md`, update the README download links, and push to `main`.
 After successful validation, the workflow creates `v<version>` and publishes the release.
 A manually pushed version tag must also match Cargo. Assets are uploaded to a draft,
 their SHA-256 digests are checked, and only then is the release published.
@@ -159,9 +170,19 @@ release, moves its tag and verifies replacement assets before publishing it agai
 A `Repair-Release-Tag: v<version>` commit trailer restores a detached release tag
 through a dedicated workflow job. The existing tag must match the release commit;
 verified assets are preserved.
+A `Refresh-Release-Assets: v<version>` trailer explicitly refreshes download names,
+release notes and the documentation archive of an existing release. Its published
+executable bytes and version tag are preserved.
 
-The updater requires a separate **`scribe-seek-windows-x64.exe`** release asset with
-a SHA-256 digest in the GitHub API. The ZIP is available for manual downloads.
+Standalone downloads use **`ScribeSeek-v<version>.exe`**, with no architecture suffix
+while Windows x64 is the only executable architecture. The documentation archive is
+**`ScribeSeek-v<version>.zip`** and includes the README screenshots and license notices.
+`SHA256SUMS.txt` names the versioned EXE; each GitHub asset also has a SHA-256 digest.
+
+The updater prefers the versioned executable and accepts the legacy name for older
+releases. An identical **`scribe-seek-windows-x64.exe`** compatibility copy remains
+available so already installed 0.1.x versions can still update. It is the same x64
+build, not another architecture variant. Use the versioned download for new installations.
 Run `./scripts/test_update.ps1` to verify replacement, restart and rollback backup
 with isolated test executables. Run `cargo run --release --locked --example check_updates`
 to check the release API without opening the UI.

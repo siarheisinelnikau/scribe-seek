@@ -1,5 +1,6 @@
 /target/
 /dist/
+/release-assets/
 /.test-data/
 *.partial
 *.scribe.json
