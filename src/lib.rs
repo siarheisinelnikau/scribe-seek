@@ -1,5 +1,7 @@
 pub mod app;
 pub mod audio;
+#[cfg(windows)]
+pub mod desktop;
 pub mod i18n;
 pub mod languages;
 pub mod model;

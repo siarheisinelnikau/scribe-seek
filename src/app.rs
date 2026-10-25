@@ -10,7 +10,7 @@ use crate::{
     updater::{self, Downloaded, UpdateState, Updater},
     worker::{Event, Job, Task},
 };
-use eframe::egui::{self, Color32, FontId, RichText, Stroke, Vec2};
+use egui::{self, Color32, FontId, RichText, Stroke, Vec2};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -55,12 +55,8 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(
-        cc: &eframe::CreationContext<'_>,
-        storage: Storage,
-        source: Option<PathBuf>,
-    ) -> Self {
-        Self::with_context(&cc.egui_ctx, storage, source)
+    pub fn new(ctx: &egui::Context, storage: Storage, source: Option<PathBuf>) -> Self {
+        Self::with_context(ctx, storage, source)
     }
 
     fn with_context(ctx: &egui::Context, storage: Storage, source: Option<PathBuf>) -> Self {
@@ -1296,8 +1292,8 @@ impl App {
     }
 }
 
-impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl App {
+    pub fn draw(&mut self, ctx: &egui::Context) {
         let l = self.locale;
         let settings_before = self.current_settings();
         self.poll();
@@ -1462,6 +1458,13 @@ impl eframe::App for App {
                 Err(error) => self.updater.state = UpdateState::Failed(format!("{error:#}")),
             }
         }
+    }
+}
+
+#[cfg(not(windows))]
+impl eframe::App for App {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.draw(ctx);
     }
 }
 
@@ -1671,6 +1674,81 @@ fn highlight(text: &str, query: &str) -> egui::text::LayoutJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn cpu_renderer_retains_font_uploads_and_draws_text_at_native_scales() {
+        use egui_software_backend::{BufferMutRef, ColorFieldOrder, EguiSoftwareRender};
+        for scale in [1.0_f32, 1.25, 1.5, 2.0] {
+            let directory = tempfile::tempdir().unwrap();
+            let storage = Storage::at(directory.path().to_owned()).unwrap();
+            Settings {
+                check_updates_on_startup: false,
+                ..Default::default()
+            }
+            .save(&storage)
+            .unwrap();
+            let context = egui::Context::default();
+            let mut app = App::new(&context, storage, None);
+            let document = crate::transcript::tests::fixture();
+            app.source = Some(document.source.clone());
+            app.document = Some(document);
+            let mut pending = egui::TexturesDelta::default();
+            let mut last_frame = None;
+            // Model frames produced while minimized: no rasterization yet.
+            for frame in 0..3 {
+                let mut input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        Vec2::new(1180.0, 800.0),
+                    )),
+                    time: Some(frame as f64 / 60.0),
+                    ..Default::default()
+                };
+                input
+                    .viewports
+                    .get_mut(&egui::ViewportId::ROOT)
+                    .unwrap()
+                    .native_pixels_per_point = Some(scale);
+                let mut output = context.run(input, |context| app.draw(context));
+                pending.append(std::mem::take(&mut output.textures_delta));
+                last_frame = Some(output);
+            }
+            let output = last_frame.unwrap();
+            assert!((output.pixels_per_point - scale).abs() < 0.01);
+            let primitives = context.tessellate(output.shapes, output.pixels_per_point);
+            let (width, height) = ((1180.0 * scale) as usize, (800.0 * scale) as usize);
+            let mut pixels = vec![[0_u8; 4]; width * height];
+            let mut renderer = EguiSoftwareRender::new(ColorFieldOrder::Bgra);
+            renderer.render(
+                &mut BufferMutRef::new(&mut pixels, width, height),
+                &primitives,
+                &pending,
+                scale,
+            );
+            let bright = pixels
+                .iter()
+                .filter(|p| p[0] > 210 && p[1] > 210 && p[2] > 210)
+                .count();
+            assert!(
+                bright > width * height * 7 / 10,
+                "Background was not restored at scale {scale}"
+            );
+            let mut text_pixels = 0;
+            for y in (220.0 * scale) as usize..(500.0 * scale) as usize {
+                for x in (300.0 * scale) as usize..(1150.0 * scale) as usize {
+                    let p = pixels[y * width + x];
+                    if p[0] < 90 && p[1] < 90 && p[2] < 90 && p[3] > 200 {
+                        text_pixels += 1;
+                    }
+                }
+            }
+            assert!(
+                text_pixels > (50.0 * scale * scale) as usize,
+                "Text disappeared after deferred font uploads at scale {scale}"
+            );
+        }
+    }
+
     #[test]
     fn localized_layout_stays_within_panels_at_supported_window_sizes() {
         let directory = tempfile::tempdir().unwrap();
