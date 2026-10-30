@@ -153,7 +153,7 @@ impl App {
             locale: settings.ui_language,
             show_settings: false,
             check_updates_on_startup: settings.check_updates_on_startup,
-            updater: Updater::default(),
+            updater: Updater::new(ctx.clone()),
             restart_update: None,
             query: String::new(),
             matches: Vec::new(),
@@ -345,16 +345,14 @@ impl App {
             UpdateState::UpToDate => {
                 status_line(ui, l.tr("You are up to date"), ACCENT);
             }
-            UpdateState::NoReleases => {
-                ui.label(l.tr("No releases have been published yet"));
-            }
             UpdateState::Available(release) => {
                 ui.label(l.format(
                     "Version {version} is available",
                     &[("version", release.version.clone())],
                 ));
                 if ui.button(l.tr("Download update")).clicked() {
-                    self.updater.download(release, self.storage.clone());
+                    self.updater
+                        .download(release, self.storage.clone(), self.source.clone());
                 }
             }
             UpdateState::Downloading(progress) => {
@@ -1298,7 +1296,7 @@ impl App {
         let settings_before = self.current_settings();
         self.poll();
         self.updater.poll();
-        if self.job.is_some() || self.playback.playing() || self.updater.busy() {
+        if self.job.is_some() || self.playback.playing() {
             ctx.request_repaint_after(Duration::from_millis(80));
         }
         let dropped: Vec<_> = ctx.input(|i| {

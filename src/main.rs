@@ -1,24 +1,47 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() -> anyhow::Result<()> {
-    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--apply-update")) {
-        if let Some(path) = std::env::args_os().nth(2).map(std::path::PathBuf::from) {
-            let locale = scribe_seek::updater::helper_locale(&path);
-            if let Err(error) = scribe_seek::updater::run_helper(&path) {
-                rfd::MessageDialog::new()
-                    .set_title("Scribe Seek")
-                    .set_description(format!(
-                        "{}\n\n{}",
-                        locale.tr("Update failed. The previous version was kept or restored."),
-                        locale.message(&format!("{error:#}"))
-                    ))
-                    .set_level(rfd::MessageLevel::Error)
-                    .show();
-            }
-        }
-        return Ok(());
+    let mut arguments = std::env::args_os().skip(1);
+    let first = arguments.next();
+    if first.as_deref() == Some(std::ffi::OsStr::new("--apply-update")) {
+        return rust_auto_updator::apply_update(&scribe_seek::updater::config()?)
+            .map_err(anyhow::Error::msg);
     }
-    let storage = match scribe_seek::storage::Storage::discover() {
+    let mut source = None;
+    let mut data = None;
+    let mut cleanup = None;
+    let mut argument = first;
+    while let Some(value) = argument {
+        match value.to_str() {
+            Some("--data-dir") => {
+                data = Some(std::path::PathBuf::from(
+                    arguments
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("Missing data directory"))?,
+                ))
+            }
+            Some("--source") => {
+                source = Some(std::path::PathBuf::from(
+                    arguments
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("Missing source file"))?,
+                ))
+            }
+            Some("--cleanup-update") => {
+                cleanup =
+                    Some(std::path::PathBuf::from(arguments.next().ok_or_else(
+                        || anyhow::anyhow!("Missing cleanup directory"),
+                    )?))
+            }
+            _ if source.is_none() => source = Some(std::path::PathBuf::from(value)),
+            _ => anyhow::bail!("Unexpected command-line argument"),
+        }
+        argument = arguments.next();
+    }
+    let storage = match data.map_or_else(
+        scribe_seek::storage::Storage::discover,
+        scribe_seek::storage::Storage::at,
+    ) {
         Ok(storage) => storage,
         Err(error) => {
             rfd::MessageDialog::new()
@@ -37,14 +60,13 @@ fn main() -> anyhow::Result<()> {
         || !std::is_x86_feature_detected!("fma")
         || !std::is_x86_feature_detected!("f16c")
     {
-        rfd::MessageDialog::new().set_title("Scribe Seek")
-            .set_description(locale.tr("This build requires a CPU with AVX2, FMA and F16C (Intel Haswell / AMD Ryzen or newer)."))
-            .set_level(rfd::MessageLevel::Error).show();
+        rfd::MessageDialog::new().set_title("Scribe Seek").set_description(locale.tr("This build requires a CPU with AVX2, FMA and F16C (Intel Haswell / AMD Ryzen or newer).")).set_level(rfd::MessageLevel::Error).show();
         return Ok(());
     }
-    let source = std::env::args_os().nth(1).map(std::path::PathBuf::from);
     #[cfg(windows)]
-    let result = scribe_seek::desktop::run(storage, source);
+    let result = scribe_seek::desktop::run(storage, source, cleanup);
+    #[cfg(not(windows))]
+    let _ = cleanup;
     #[cfg(not(windows))]
     let result = run_eframe(storage, source);
     if let Err(error) = result {

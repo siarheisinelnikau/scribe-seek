@@ -106,18 +106,23 @@ Select **Download update**, then **Restart and update**. The app closes, replace
 the executable with the verified download, and restarts using the same data directory.
 Restarting is unavailable while recognition or a model download is running.
 
-The updater checks the version, repository URL, size, GitHub SHA-256 asset digest
-and Windows x64 PE format. The checksum verifies integrity relative to GitHub;
-independent digital signatures are not yet provided. The previous executable is
-kept beside the app as `.scribe-seek-….previous.exe` and restored if installation
-or restart fails. An unwritable application directory produces an error and a link
-for manual download. The helper is a temporary copy of the same executable.
+The shared `rust-auto-updator` engine checks the version, repository URL, size,
+SHA-256 and Windows PE architecture. It uses `SHA256SUMS.txt` when supplied and
+the GitHub asset digest for older releases; both must agree when supplied.
+The checksum verifies integrity relative to GitHub; independent digital signatures
+are not yet provided. A backup is retained in a validated `.scribe-seek-update-…`
+staging folder until successful restart cleanup; installation or launch failure
+restores it. An unwritable application directory produces an error. The verified
+download runs the helper protocol. Settings, transcripts and models stay intact.
 
 ## Build
 
-Install Rust stable ≥1.88, Visual Studio Build Tools with C++ and the Windows SDK,
+Install Rust stable ≥1.95, Visual Studio Build Tools with C++ and the Windows SDK,
 CMake, and libclang (LLVM). These tools are needed only for development.
 Use a CMake version compatible with your Visual Studio installation.
+Keep the `rust-auto-updator` workspace beside this repository. It is an explicit
+local path dependency; CI/source builds must provision that workspace separately.
+No registry package or remote checkout location is assumed.
 
 ```powershell
 # If LLVM is installed separately:
@@ -204,6 +209,21 @@ and audio playback. `dumpbin /dependents` reports only Windows system DLLs.
 
 Test media: [whisper.cpp JFK sample](https://github.com/ggml-org/whisper.cpp/blob/master/samples/jfk.wav)
 and [MDN flower video](https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4).
+
+## Renderer diagnostics
+
+For a finite renderer diagnostic without external input or desktop capture, set
+`SCRIBE_SEEK_RENDER_DIAGNOSTIC` to an absolute JSON output path. Launch the release
+EXE with `--data-dir PATH` pointing to an isolated data folder whose `settings.json`
+contains `{"check_updates_on_startup":false}`. The app samples visible idle, hides
+its own window, restores it and exits after 18 seconds. Counts cover actual layout,
+CPU raster and GDI present calls; CPU is reported as a percentage of one logical
+core. Hidden/minimized windows keep worker results queued without building scenes.
+The diagnostic does not test user input latency or physical audio output.
+
+`scripts/inspect-icons.ps1 -Executable PATH` loads and renders the packaged icon
+resources at native sizes without launching the target. Scribe Seek is a regular
+windowed application and intentionally has no tray icon.
 
 ## Current limitations
 

@@ -22,6 +22,9 @@ use winit::{
     window::{Icon, Window, WindowId},
 };
 
+#[path = "render_diagnostic.rs"]
+mod diagnostic;
+
 struct Repaint {
     when: Instant,
     pass: u64,
@@ -50,6 +53,9 @@ struct Desktop {
     last_frame: Option<Instant>,
     error: Option<anyhow::Error>,
     trace: Option<FrameTrace>,
+    diagnostic: Option<diagnostic::Diagnostic>,
+    counts: [u64; 3],
+    cleanup_update: Option<PathBuf>,
 }
 
 impl Desktop {
@@ -119,12 +125,18 @@ impl Desktop {
         let Some(state) = self.window.as_mut() else {
             return Ok(());
         };
+        if !state.window.is_visible().unwrap_or(true) || state.window.is_minimized() == Some(true) {
+            // Keep worker events queued for the next visible frame; do not build
+            // or rasterize a hidden scene merely because a worker has progressed.
+            return Ok(());
+        }
         egui_winit::update_viewport_info(&mut state.viewport, &self.context, &state.window, false);
         let mut input = state.input.take_egui_input(&state.window);
         input
             .viewports
             .insert(egui::ViewportId::ROOT, state.viewport.clone());
         state.viewport.events.clear();
+        self.counts[0] += 1;
         let mut output = self.context.run(input, |context| state.app.draw(context));
         let ui_finished = Instant::now();
         state.pending_textures.append(output.textures_delta);
@@ -199,6 +211,7 @@ impl Desktop {
             return Ok(());
         }
         // Rasterize before locking the native drawing buffer.
+        self.counts[1] += 1;
         state.renderer.render_to_canvas(
             size.width as usize,
             size.height as usize,
@@ -245,7 +258,11 @@ impl Desktop {
         buffer
             .present()
             .map_err(|error| anyhow::anyhow!("Could not present the GDI bitmap: {error}"))?;
+        self.counts[2] += 1;
         state.has_frame = true;
+        if let Some(directory) = self.cleanup_update.take() {
+            rust_auto_updator::cleanup_after_update(directory, crate::updater::config()?.install);
+        }
         state.scene = scene;
         if let Some(trace) = &mut self.trace {
             trace.record(
@@ -314,6 +331,11 @@ impl ApplicationHandler<Repaint> for Desktop {
             trace.window_state(&state.window);
         }
         if matches!(event, WindowEvent::RedrawRequested) && state.has_frame {
+            if !state.window.is_visible().unwrap_or(true)
+                || state.window.is_minimized() == Some(true)
+            {
+                return;
+            }
             // Restore unchanged content after an OS expose without rebuilding UI.
             if let Err(error) = state
                 .surface
@@ -328,6 +350,7 @@ impl ApplicationHandler<Repaint> for Desktop {
             if let Some(trace) = &mut self.trace {
                 trace.restored += 1;
             }
+            self.counts[2] += 1;
             return;
         }
         let response = state.input.on_window_event(&state.window, &event);
@@ -349,15 +372,45 @@ impl ApplicationHandler<Repaint> for Desktop {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(diagnostic) = &mut self.diagnostic {
+            match diagnostic.poll(self.counts) {
+                diagnostic::Action::Hide => {
+                    if let Some(state) = &self.window {
+                        state.window.set_visible(false);
+                    }
+
+                    self.next_frame = None;
+                }
+                diagnostic::Action::Show => {
+                    if let Some(state) = &mut self.window {
+                        state.window.set_visible(true);
+                        state.window.set_minimized(false);
+                        state.has_frame = false;
+                    }
+                    self.request_frame(Instant::now());
+                }
+                diagnostic::Action::Exit => {
+                    event_loop.exit();
+                    return;
+                }
+                diagnostic::Action::None => {}
+            }
+        }
         if self.next_frame.is_some_and(|when| when <= Instant::now())
             && let Err(error) = self.draw(event_loop)
         {
             self.fail(event_loop, error);
         }
-        event_loop.set_control_flow(
-            self.next_frame
-                .map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
-        );
+        let deadline = match (
+            self.next_frame,
+            self.diagnostic
+                .as_ref()
+                .map(|diagnostic| diagnostic.deadline()),
+        ) {
+            (Some(frame), Some(diagnostic)) => Some(frame.min(diagnostic)),
+            (frame, diagnostic) => frame.or(diagnostic),
+        };
+        event_loop.set_control_flow(deadline.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
@@ -517,7 +570,11 @@ impl FrameTrace {
     }
 }
 
-pub fn run(storage: Storage, source: Option<PathBuf>) -> Result<()> {
+pub fn run(
+    storage: Storage,
+    source: Option<PathBuf>,
+    cleanup_update: Option<PathBuf>,
+) -> Result<()> {
     let event_loop = EventLoop::<Repaint>::with_user_event().build()?;
     let context = egui::Context::default();
     let proxy = event_loop.create_proxy();
@@ -538,6 +595,9 @@ pub fn run(storage: Storage, source: Option<PathBuf>) -> Result<()> {
         last_frame: None,
         error: None,
         trace: FrameTrace::new(),
+        diagnostic: diagnostic::Diagnostic::from_env("SCRIBE_SEEK_RENDER_DIAGNOSTIC"),
+        counts: [0; 3],
+        cleanup_update,
     };
     event_loop.run_app(&mut desktop)?;
     if let Some(error) = desktop.error {
