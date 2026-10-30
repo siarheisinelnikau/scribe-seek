@@ -30,7 +30,7 @@ if (-not $release) {
     if ($detached.Count -gt 1) { throw 'Multiple detached releases match this version' }
     if ($detached.Count -eq 1) { $release = $detached[0] }
 }
-$assetNames = @('scribe-seek-windows-x64.exe', 'scribe-seek-windows-x64.zip', 'SHA256SUMS.txt')
+$assetNames = @("ScribeSeek-$tag.exe", "ScribeSeek-$tag.zip", 'SHA256SUMS.txt', 'scribe-seek-windows-x64.exe')
 if ($RepairTagOnly) {
     $repairTrailer = '(?m)^Repair-Release-Tag: ' + [regex]::Escape($tag) + '\r?$'
     if (-not $isMainPush -or $env:RELEASE_COMMIT_MESSAGE -notmatch $repairTrailer) { throw 'An explicit main-commit tag-repair trailer is required' }
@@ -60,20 +60,9 @@ if ($release -and $release.draft -and $release.target_commitish -ne $env:GITHUB_
 foreach ($assetName in $assetNames) {
     if (-not (Test-Path -LiteralPath (Join-Path 'release-assets' $assetName))) { throw "Missing release asset: $assetName" }
 }
-$notes = @'
-First public Windows x64 release of Scribe Seek.
-
-- Local audio and video transcription with Whisper; recordings stay on your computer.
-- Searchable transcripts, timestamp playback, waveform navigation, and TXT/SRT/VTT/JSON export.
-- English interface by default, with Russian, French, German, Spanish and Italian in Settings.
-- In-app GitHub update checks, SHA-256 verification, restart and rollback backup.
-- Storage paths and buttons to open the model and data folders.
-- Fixed clipped compact-button borders and sidebar layout.
-
-Download the standalone EXE, or the ZIP including documentation and license notices. Windows 10/11 x64 and an AVX2/FMA/F16C-capable CPU are required. No Python, FFmpeg or installer is needed. Download a Whisper model once inside the app; model data is stored separately.
-
-Preview builds reporting 0.1.0 can install this version from Settings → Updates. The standalone EXE asset and its GitHub SHA-256 digest are used by the updater.
-'@
+$notesPath = Join-Path $PSScriptRoot "../releases/$tag.md"
+if (-not (Test-Path -LiteralPath $notesPath)) { throw "Missing reviewed release notes: releases/$tag.md" }
+$notes = Get-Content -LiteralPath $notesPath -Raw -Encoding utf8
 if ($repairRelease) {
     # An explicit commit trailer authorizes replacing exactly one known release
     # commit. Hide its assets until the replacement has passed verification.

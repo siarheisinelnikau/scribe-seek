@@ -25,7 +25,7 @@ use std::{
 pub const RELEASES_URL: &str = "https://github.com/siarheisinelnikau/scribe-seek/releases";
 const LATEST_API: &str =
     "https://api.github.com/repos/siarheisinelnikau/scribe-seek/releases/latest";
-pub const EXE_ASSET: &str = "scribe-seek-windows-x64.exe";
+pub const LEGACY_EXE_ASSET: &str = "scribe-seek-windows-x64.exe";
 const MAX_EXE_SIZE: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
@@ -226,12 +226,17 @@ fn parse_release(bytes: &[u8], current: &str) -> Result<Option<Release>> {
     {
         return Ok(None);
     }
+    let executable_name = format!("ScribeSeek-v{version}.exe");
     let asset = release
         .assets
-        .into_iter()
-        .find(|a| a.name == EXE_ASSET)
+        .iter()
+        .find(|a| a.name == executable_name)
+        .or_else(|| release.assets.iter().find(|a| a.name == LEGACY_EXE_ASSET))
         .context("This release has no compatible Windows executable")?;
-    let expected = format!("{RELEASES_URL}/download/{}/{EXE_ASSET}", release.tag_name);
+    let expected = format!(
+        "{RELEASES_URL}/download/{}/{}",
+        release.tag_name, asset.name
+    );
     ensure!(
         asset.browser_download_url == expected,
         "Update download URL is not from this repository"
@@ -242,7 +247,9 @@ fn parse_release(bytes: &[u8], current: &str) -> Result<Option<Release>> {
     );
     let digest = asset
         .digest
-        .and_then(|s| s.strip_prefix("sha256:").map(str::to_owned))
+        .as_deref()
+        .and_then(|s| s.strip_prefix("sha256:"))
+        .map(str::to_owned)
         .context("GitHub did not provide an update checksum")?;
     ensure!(
         digest.len() == 64 && digest.bytes().all(|c| c.is_ascii_hexdigit()),
@@ -517,9 +524,38 @@ fn wait_for_parent(_: u32) -> Result<()> {
 mod tests {
     use super::*;
     fn release(tag: &str) -> serde_json::Value {
+        let executable = format!("ScribeSeek-{tag}.exe");
         serde_json::json!({"tag_name": tag, "draft": false, "prerelease": false, "assets": [{
-            "name": EXE_ASSET, "browser_download_url": format!("{RELEASES_URL}/download/{tag}/{EXE_ASSET}"),
+            "name": executable, "browser_download_url": format!("{RELEASES_URL}/download/{tag}/{executable}"),
             "size": 1024, "digest": format!("sha256:{}", "ab".repeat(32)) }]})
+    }
+    #[test]
+    fn accepts_legacy_downloads_and_prefers_the_versioned_executable() {
+        let mut old = release("v0.2.0");
+        old["assets"][0]["name"] = LEGACY_EXE_ASSET.into();
+        old["assets"][0]["browser_download_url"] =
+            format!("{RELEASES_URL}/download/v0.2.0/{LEGACY_EXE_ASSET}").into();
+        assert!(
+            parse_release(&serde_json::to_vec(&old).unwrap(), "0.1.1")
+                .unwrap()
+                .unwrap()
+                .url
+                .ends_with(LEGACY_EXE_ASSET)
+        );
+        let mut both = release("v0.2.0");
+        both["assets"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, old["assets"][0].clone());
+        assert!(
+            parse_release(&serde_json::to_vec(&both).unwrap(), "0.1.1")
+                .unwrap()
+                .unwrap()
+                .url
+                .ends_with("ScribeSeek-v0.2.0.exe")
+        );
+        both["assets"][1]["browser_download_url"] = "https://example.com/file.exe".into();
+        assert!(parse_release(&serde_json::to_vec(&both).unwrap(), "0.1.1").is_err());
     }
     #[test]
     fn only_offers_newer_stable_versions_with_verified_repository_assets() {
