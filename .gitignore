@@ -1,0 +1,5 @@
+/target/
+/dist/
+/.test-data/
+*.partial
+*.scribe.json

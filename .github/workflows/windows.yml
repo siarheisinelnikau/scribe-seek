@@ -1,0 +1,83 @@
+name: Windows
+on:
+  push:
+    branches: [main, 'codex/**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Get build-time libclang
+        run: python -m pip install --target .test-data/tooling libclang==18.1.1
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Translation catalogs
+        run: python scripts/check_locales.py
+      - name: Clippy
+        run: |
+          . ./scripts/build-env.ps1
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Tests
+        run: |
+          . ./scripts/build-env.ps1
+          cargo test --locked
+      - name: Portable executable
+        run: |
+          . ./scripts/build-env.ps1
+          cargo build --release --locked
+      - name: Verify native update helper
+        run: ./scripts/test_update.ps1
+      - name: Validate version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          $version = ($metadata.packages | Where-Object name -eq 'scribe-seek').version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Version tag must match Cargo.toml' }
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/scribe-seek.exe dist/scribe-seek-windows-x64.exe
+          Copy-Item README.md,LICENSE,THIRD_PARTY_LICENSES.txt,locales/UNICODE_LICENSE.txt dist/
+          $hash = (Get-FileHash dist/scribe-seek-windows-x64.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  scribe-seek-windows-x64.exe" | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+          Compress-Archive -Path dist/* -DestinationPath scribe-seek-windows-x64.zip
+          Move-Item scribe-seek-windows-x64.zip dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scribe-seek-windows-x64
+          path: |
+            dist/scribe-seek-windows-x64.exe
+            dist/scribe-seek-windows-x64.zip
+            dist/SHA256SUMS.txt
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: build
+    runs-on: windows-2025
+    concurrency: publish-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: scribe-seek-windows-x64
+          path: release-assets
+      - name: Publish verified release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: ./scripts/publish_release.ps1
