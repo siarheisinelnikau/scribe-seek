@@ -10,6 +10,20 @@ permissions:
   contents: read
 
 jobs:
+  repair-release-tag:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Repair-Release-Tag:')
+    runs-on: windows-2025
+    concurrency: publish-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore verified release version tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: ./scripts/publish_release.ps1 -RepairTagOnly
+
   build:
     runs-on: windows-2025
     steps:
@@ -64,8 +78,9 @@ jobs:
             dist/SHA256SUMS.txt
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    needs: build
+    needs: [build, repair-release-tag]
+    # Ordinary pushes skip tag repair; an explicit repair must succeed first.
+    if: always() && needs.build.result == 'success' && (needs['repair-release-tag'].result == 'success' || needs['repair-release-tag'].result == 'skipped') && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: windows-2025
     concurrency: publish-release
     permissions:
