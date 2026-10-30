@@ -4,18 +4,21 @@ A native Rust desktop app that turns long audio or video recordings into searcha
 transcripts. Drop a file, find a phrase, and click a segment to play from its timestamp.
 Speech recognition runs locally with Whisper / whisper.cpp.
 
-**[Download ScribeSeek-v0.1.1.exe](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.1.1/ScribeSeek-v0.1.1.exe)**
-· [Portable ZIP](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.1.1/ScribeSeek-v0.1.1.zip)
+**[Download ScribeSeek-v0.1.2.exe](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.1.2/ScribeSeek-v0.1.2.exe)**
+· [Portable ZIP](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.1.2/ScribeSeek-v0.1.2.zip)
 · [All releases](https://github.com/siarheisinelnikau/scribe-seek/releases)
 
 Windows 10/11 x64. No installer, Python or FFmpeg required.
+
+Screenshots show v0.1.1. Version 0.1.2 keeps this layout and replaces the Windows
+renderer and application icon.
 
 ![Scribe Seek searching an actual JFK sample transcript, with matching phrases and timestamp playback](docs/screenshots/transcript-search.png)
 
 ## Quick start
 
 1. Download the standalone Windows EXE from [Releases](https://github.com/siarheisinelnikau/scribe-seek/releases/latest).
-2. Run `ScribeSeek-v0.1.1.exe`.
+2. Run `ScribeSeek-v0.1.2.exe`.
 3. Choose a model and select **Download model**. Tiny is useful for a quick trial;
    Small generally provides better recognition. Downloads are verified by size and SHA-256.
 4. Drop a recording into the window or select **New recording**.
@@ -65,6 +68,11 @@ Requirements: Windows 10/11 x64 and a CPU supporting AVX2, FMA and F16C
 
 Model weights are separate, one-time downloads of 74–181 MiB. A fully offline copy
 consists of the executable and a previously downloaded model.
+
+The Windows interface uses egui with CPU rasterization and Win32 GDI presentation.
+It does not create an OpenGL context. Idle windows wait for events, unchanged scenes
+skip rendering, and uncovered windows reuse a retained bitmap. DPI changes rebuild
+the pixel-sized render target and font textures at the new scale.
 
 ## Storage and portable mode
 
@@ -213,7 +221,8 @@ and [MDN flower video](https://interactive-examples.mdn.mozilla.net/media/cc0-vi
 
 ## Architecture and licenses
 
-`app` contains the egui/eframe UI; `worker` runs background jobs; `audio` combines
+`app` contains the egui UI; `desktop` hosts the reactive Windows CPU/GDI renderer;
+`worker` runs background jobs; `audio` combines
 Symphonia, static libopus and Rubato resampling; `transcribe` integrates Whisper;
 `playback` uses Rodio; `transcript` handles search and subtitles; `storage` manages
 the library; `model` verifies model downloads; `updater` manages GitHub updates.
@@ -233,3 +242,10 @@ Regenerate them with `python scripts/generate_licenses.py` after `cargo fetch`.
 Localized language names come from Unicode CLDR and are embedded in the app;
 see `locales/UNICODE_LICENSE.txt`. Update them with `python scripts/update_language_names.py`.
 UI translations live in `locales/{en,ru,fr,de,es,it}.json`.
+
+For local Windows rendering diagnostics, set `SCRIBE_SEEK_RENDER_TRACE` to a JSONL
+file path before launch. It records layout/raster/presentation timings, presented
+frames, skipped unchanged scenes and retained-bitmap restores. Press `F12` to record
+counters without triggering a paint. With the variable unset, tracing is disabled.
+Window and EXE icons are built from `assets/app.svg`; regenerate their checked-in
+native assets with `python scripts/generate_icon.py` (requires Pillow).

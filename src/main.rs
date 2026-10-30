@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-fn main() -> eframe::Result {
+fn main() -> anyhow::Result<()> {
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--apply-update")) {
         if let Some(path) = std::env::args_os().nth(2).map(std::path::PathBuf::from) {
             let locale = scribe_seek::updater::helper_locale(&path);
@@ -43,6 +43,25 @@ fn main() -> eframe::Result {
         return Ok(());
     }
     let source = std::env::args_os().nth(1).map(std::path::PathBuf::from);
+    #[cfg(windows)]
+    let result = scribe_seek::desktop::run(storage, source);
+    #[cfg(not(windows))]
+    let result = run_eframe(storage, source);
+    if let Err(error) = result {
+        rfd::MessageDialog::new()
+            .set_title("Scribe Seek")
+            .set_description(format!("Could not start Scribe Seek:\n{error:#}"))
+            .set_level(rfd::MessageLevel::Error)
+            .show();
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn run_eframe(
+    storage: scribe_seek::storage::Storage,
+    source: Option<std::path::PathBuf>,
+) -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1180.0, 800.0])
@@ -53,6 +72,13 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Scribe Seek",
         options,
-        Box::new(move |cc| Ok(Box::new(scribe_seek::app::App::new(cc, storage, source)))),
+        Box::new(move |cc| {
+            Ok(Box::new(scribe_seek::app::App::new(
+                &cc.egui_ctx,
+                storage,
+                source,
+            )))
+        }),
     )
+    .map_err(|error| anyhow::anyhow!("{error}"))
 }
