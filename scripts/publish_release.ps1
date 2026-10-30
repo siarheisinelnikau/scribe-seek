@@ -41,7 +41,7 @@ if ($RepairTagOnly) {
         $assets = @($release.assets | Where-Object name -eq $assetName)
         if ($assets.Count -ne 1 -or $assets[0].digest -notmatch '^sha256:[0-9a-f]{64}$' -or $assets[0].size -le 0) { throw "Missing verified release asset: $assetName" }
     }
-    $repairBody = @{ tag_name = $tag; draft = $false; prerelease = $false; make_latest = 'true' } | ConvertTo-Json
+    $repairBody = @{ tag_name = $tag } | ConvertTo-Json
     $published = Invoke-RestMethod -Method Patch -Uri "$releasesUrl/$($release.id)" -Headers $headers -Body $repairBody -ContentType 'application/json'
     if ($published.tag_name -ne $tag -or $published.draft) { throw 'GitHub did not restore the version tag' }
     Write-Output $published.html_url
