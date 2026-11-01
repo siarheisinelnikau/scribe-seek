@@ -188,5 +188,9 @@
   "Could not wait for the application to close": "Could not wait for the application to close",
   "The application did not close in time": "The application did not close in time",
   "Dismiss": "Dismiss",
-  "Native language name": "English"
+  "Native language name": "English",
+  "Appearance": "Appearance",
+  "Light": "Light",
+  "Dark": "Dark",
+  "Could not start Scribe Seek": "Could not start Scribe Seek"
 }

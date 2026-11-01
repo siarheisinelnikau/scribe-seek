@@ -39,6 +39,7 @@ eframe = { version = "=0.33.3", default-features = false, features = ["default_f
 winresource = "0.1"
 
 [dev-dependencies]
+png = "0.18.1"
 tempfile = "3.27"
 
 [profile.release]

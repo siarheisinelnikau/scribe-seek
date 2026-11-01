@@ -6,6 +6,7 @@ use crate::{
     playback::Playback,
     settings::Settings,
     storage::{Storage, atomic_write},
+    theme::{Palette, Theme},
     transcript::{Transcript, clock},
     updater::{self, Downloaded, UpdateState, Updater},
     worker::{Event, Job, Task},
@@ -15,14 +16,6 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-
-const BG: Color32 = Color32::from_rgb(247, 248, 252);
-const PANEL: Color32 = Color32::WHITE;
-const BORDER: Color32 = Color32::from_rgb(224, 228, 239);
-const MUTED: Color32 = Color32::from_rgb(113, 122, 143);
-const ACCENT: Color32 = Color32::from_rgb(91, 78, 232);
-const TEXT: Color32 = Color32::from_rgb(28, 32, 51);
-const SOFT: Color32 = Color32::from_rgb(238, 236, 255);
 
 pub struct App {
     storage: Storage,
@@ -40,6 +33,7 @@ pub struct App {
     language: String,
     language_filter: String,
     locale: Locale,
+    theme: Theme,
     show_settings: bool,
     check_updates_on_startup: bool,
     updater: Updater,
@@ -60,56 +54,6 @@ impl App {
     }
 
     fn with_context(ctx: &egui::Context, storage: Storage, source: Option<PathBuf>) -> Self {
-        ctx.set_visuals(egui::Visuals::light());
-        let mut style = (*ctx.style()).clone();
-        style.visuals.panel_fill = BG;
-        style.visuals.window_fill = PANEL;
-        style.visuals.extreme_bg_color = BG;
-        style.visuals.faint_bg_color = PANEL;
-        style.visuals.override_text_color = Some(TEXT);
-        style.visuals.selection.bg_fill = SOFT;
-        style.visuals.selection.stroke = Stroke::new(1.0_f32, ACCENT);
-        style.visuals.hyperlink_color = ACCENT;
-        style.visuals.window_stroke = Stroke::new(1.0_f32, BORDER);
-        style.visuals.window_corner_radius = egui::CornerRadius::same(14);
-        style.visuals.widgets.inactive.bg_fill = PANEL;
-        style.visuals.widgets.inactive.weak_bg_fill = PANEL;
-        style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER);
-        style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(8);
-        style.visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, MUTED);
-        style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, BORDER);
-        style.visuals.widgets.inactive.expansion = 0.0;
-        style.visuals.widgets.hovered.bg_fill = SOFT;
-        style.visuals.widgets.hovered.weak_bg_fill = SOFT;
-        style.visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, ACCENT);
-        style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(8);
-        style.visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, ACCENT);
-        style.visuals.widgets.hovered.expansion = 0.0;
-        style.visuals.widgets.active.bg_fill = Color32::from_rgb(221, 216, 255);
-        style.visuals.widgets.active.weak_bg_fill = Color32::from_rgb(221, 216, 255);
-        style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(8);
-        style.visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, ACCENT);
-        style.visuals.widgets.active.expansion = 0.0;
-        style.visuals.widgets.open.expansion = 0.0;
-        style.spacing.scroll = egui::style::ScrollStyle {
-            floating: false,
-            foreground_color: true,
-            bar_width: 4.0,
-            bar_inner_margin: 8.0,
-            ..egui::style::ScrollStyle::solid()
-        };
-        style.spacing.item_spacing = Vec2::new(10.0, 10.0);
-        style.spacing.button_padding = Vec2::new(14.0, 9.0);
-        style
-            .text_styles
-            .insert(egui::TextStyle::Body, FontId::proportional(16.0));
-        style
-            .text_styles
-            .insert(egui::TextStyle::Button, FontId::proportional(15.0));
-        style
-            .text_styles
-            .insert(egui::TextStyle::Small, FontId::proportional(13.0));
-        ctx.set_style(style);
         let (settings, settings_notice) = match Settings::load(&storage) {
             Ok(settings) => (settings, None),
             Err(error) => (
@@ -117,6 +61,7 @@ impl App {
                 Some((format!("Could not load settings: {error:#}"), true)),
             ),
         };
+        settings.theme.apply(ctx);
         let (library, notice) = match storage.library() {
             Ok((library, 0)) => (library, None),
             Ok((library, n)) => (
@@ -151,6 +96,7 @@ impl App {
             },
             language_filter: String::new(),
             locale: settings.ui_language,
+            theme: settings.theme,
             show_settings: false,
             check_updates_on_startup: settings.check_updates_on_startup,
             updater: Updater::new(ctx.clone()),
@@ -176,6 +122,7 @@ impl App {
     fn current_settings(&self) -> Settings {
         Settings {
             ui_language: self.locale,
+            theme: self.theme,
             speech_language: self.language.clone(),
             model: MODELS[self.model].id.into(),
             check_updates_on_startup: self.check_updates_on_startup,
@@ -183,11 +130,12 @@ impl App {
     }
 
     fn speech_language_picker(&mut self, ui: &mut egui::Ui) {
+        let colors = self.theme.palette();
         let l = self.locale;
         ui.label(
             RichText::new(l.tr("Speech language"))
                 .size(12.0)
-                .color(MUTED),
+                .color(colors.muted),
         );
         egui::ComboBox::from_id_salt("speech_language")
             .width(ui.available_width())
@@ -247,6 +195,7 @@ impl App {
     }
 
     fn settings_window(&mut self, ctx: &egui::Context) {
+        let colors = self.theme.palette();
         let l = self.locale;
         let mut open = self.show_settings;
         egui::Window::new(l.tr("Settings"))
@@ -257,6 +206,13 @@ impl App {
             .max_height(660.0)
             .resizable(false)
             .show(ctx, |ui| {
+                ui.label(RichText::new(l.tr("Appearance")).strong());
+                ui.horizontal_wrapped(|ui| {
+                    for theme in [Theme::Light, Theme::Dark] {
+                        ui.selectable_value(&mut self.theme, theme, l.tr(theme.label()));
+                    }
+                });
+                ui.add_space(8.0);
                 ui.label(RichText::new(l.tr("Interface language")).strong());
                 egui::ComboBox::from_id_salt("ui_language")
                     .width(280.0)
@@ -270,14 +226,14 @@ impl App {
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(l.tr("Changes apply immediately and are saved automatically."))
-                        .color(MUTED)
+                        .color(colors.muted)
                         .size(13.0),
                 );
                 ui.label(
                     RichText::new(
                         l.tr("Interface language does not change the language of your recording."),
                     )
-                    .color(MUTED)
+                    .color(colors.muted)
                     .size(13.0),
                 );
                 ui.add_space(12.0);
@@ -286,7 +242,7 @@ impl App {
                 ui.label(
                     RichText::new(l.tr("Models are stored in"))
                         .size(13.0)
-                        .color(MUTED),
+                        .color(colors.muted),
                 );
                 let models = self.storage.models_dir();
                 let data = self.storage.root.clone();
@@ -298,14 +254,14 @@ impl App {
                 ui.label(
                     RichText::new(l.tr("Settings and transcripts are stored in"))
                         .size(13.0)
-                        .color(MUTED),
+                        .color(colors.muted),
                 );
                 ui.label(RichText::new(display_path(&data)).monospace().size(12.0));
                 ui.label(
                     RichText::new("settings.json")
                         .monospace()
                         .size(12.0)
-                        .color(MUTED),
+                        .color(colors.muted),
                 );
                 if ui.button(l.tr("Open data folder")).clicked() {
                     self.open_folder(&data);
@@ -324,6 +280,7 @@ impl App {
     }
 
     fn update_settings_ui(&mut self, ui: &mut egui::Ui) {
+        let colors = self.theme.palette();
         let l = self.locale;
         ui.label(RichText::new(l.tr("Updates")).strong());
         ui.label(l.format(
@@ -343,7 +300,7 @@ impl App {
                 });
             }
             UpdateState::UpToDate => {
-                status_line(ui, l.tr("You are up to date"), ACCENT);
+                status_line(ui, l.tr("You are up to date"), colors.accent);
             }
             UpdateState::Available(release) => {
                 ui.label(l.format(
@@ -359,7 +316,7 @@ impl App {
                 ui.label(l.tr("Downloading update…"));
                 ui.add(
                     egui::ProgressBar::new(progress)
-                        .fill(ACCENT)
+                        .fill(colors.accent)
                         .show_percentage(),
                 );
                 if ui.button(l.tr("Cancel")).clicked() {
@@ -385,7 +342,7 @@ impl App {
                 }
             }
             UpdateState::Failed(error) => {
-                ui.label(RichText::new(l.message(&error)).color(Color32::from_rgb(175, 55, 55)));
+                ui.label(RichText::new(l.message(&error)).color(colors.error));
             }
         }
         if ui
@@ -569,11 +526,12 @@ impl App {
     }
 
     fn sidebar(&mut self, ctx: &egui::Context) -> (egui::Rect, egui::Rect) {
+        let colors = self.theme.palette();
         let l = self.locale;
         let panel = egui::SidePanel::left("library")
             .exact_width(280.0)
             .resizable(false)
-            .frame(egui::Frame::new().fill(PANEL).inner_margin(20.0))
+            .frame(egui::Frame::new().fill(colors.panel).inner_margin(20.0))
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(8.0, 6.0);
                 ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
@@ -591,7 +549,7 @@ impl App {
                         ui.horizontal(|ui| {
                             let (rect, _) =
                                 ui.allocate_exact_size(Vec2::splat(36.0), egui::Sense::hover());
-                            ui.painter().rect_filled(rect, 10.0, ACCENT);
+                            ui.painter().rect_filled(rect, 10.0, colors.accent);
                             for (i, h) in [9.0, 19.0, 13.0, 23.0, 11.0].iter().enumerate() {
                                 let x = rect.left() + 9.0 + i as f32 * 4.5;
                                 ui.painter().line_segment(
@@ -599,7 +557,7 @@ impl App {
                                         egui::pos2(x, rect.center().y - h / 2.0),
                                         egui::pos2(x, rect.center().y + h / 2.0),
                                     ],
-                                    Stroke::new(2.0_f32, PANEL),
+                                    Stroke::new(2.0_f32, colors.on_accent),
                                 );
                             }
                             ui.label(RichText::new("scribe seek").size(23.0).strong());
@@ -610,10 +568,10 @@ impl App {
                                 self.job.is_none(),
                                 egui::Button::new(
                                     RichText::new(l.tr("+  New recording"))
-                                        .color(PANEL)
+                                        .color(colors.on_accent)
                                         .strong(),
                                 )
-                                .fill(ACCENT)
+                                .fill(colors.accent)
                                 .min_size(Vec2::new(ui.available_width(), 40.0)),
                             )
                             .clicked()
@@ -633,7 +591,7 @@ impl App {
                             eyebrow(ui, l.tr("LIBRARY"));
                             ui.label(
                                 RichText::new(self.library.len().to_string())
-                                    .color(MUTED)
+                                    .color(colors.muted)
                                     .small(),
                             );
                         });
@@ -649,7 +607,7 @@ impl App {
                                             RichText::new(
                                                 l.tr("No recordings yet.\nAdd your first one."),
                                             )
-                                            .color(MUTED)
+                                            .color(colors.muted)
                                             .size(13.0),
                                         )
                                         .wrap(),
@@ -682,13 +640,14 @@ impl App {
     }
 
     fn recognition_controls(&mut self, ui: &mut egui::Ui) {
+        let colors = self.theme.palette();
         let l = self.locale;
         ui.separator();
         ui.add_space(8.0);
         eyebrow(ui, l.tr("TRANSCRIPTION"));
         ui.add_space(4.0);
         ui.add_enabled_ui(self.job.is_none(), |ui| {
-            ui.label(RichText::new(l.tr("Model")).size(12.0).color(MUTED));
+            ui.label(RichText::new(l.tr("Model")).size(12.0).color(colors.muted));
             egui::ComboBox::from_id_salt("model")
                 .width(ui.available_width())
                 .truncate()
@@ -700,7 +659,7 @@ impl App {
                 });
             let model = MODELS[self.model];
             if model.installed(&self.storage) {
-                status_line(ui, l.tr("Model installed"), ACCENT);
+                status_line(ui, l.tr("Model installed"), colors.accent);
                 if text_action(ui, l.tr("Download again")).clicked() {
                     self.start(Task::Download(model), "Connecting to Hugging Face");
                 }
@@ -720,10 +679,14 @@ impl App {
                         } else {
                             l.tr("Transcribe recording")
                         })
-                        .color(if ready { PANEL } else { MUTED })
+                        .color(if ready {
+                            colors.on_accent
+                        } else {
+                            colors.muted
+                        })
                         .strong(),
                     )
-                    .fill(if ready { ACCENT } else { SOFT })
+                    .fill(if ready { colors.accent } else { colors.soft })
                     .min_size(Vec2::new(ui.available_width(), 38.0)),
                 )
                 .clicked()
@@ -741,11 +704,11 @@ impl App {
             }
         });
         ui.add_space(12.0);
-        status_line(ui, l.tr("Local. Your recording stays here."), MUTED);
+        status_line(ui, l.tr("Local. Your recording stays here."), colors.muted);
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-                    .color(MUTED)
+                    .color(colors.muted)
                     .size(12.0),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -764,6 +727,7 @@ impl App {
     }
 
     fn transport(&mut self, ctx: &egui::Context) {
+        let colors = self.theme.palette();
         let l = self.locale;
         if self.source.is_none() {
             return;
@@ -771,7 +735,7 @@ impl App {
         egui::TopBottomPanel::bottom("transport")
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
+                    .fill(colors.panel)
                     .inner_margin(egui::Margin::symmetric(28, 16)),
             )
             .show(ctx, |ui| {
@@ -861,9 +825,9 @@ impl App {
                             Stroke::new(
                                 2.0_f32,
                                 if (bar as f64 / bars as f64) <= position {
-                                    ACCENT
+                                    colors.accent
                                 } else {
-                                    BORDER
+                                    colors.border
                                 },
                             ),
                         );
@@ -880,25 +844,26 @@ impl App {
                 } else {
                     painter.line_segment(
                         [rect.left_center(), rect.right_center()],
-                        Stroke::new(2.0_f32, BORDER),
+                        Stroke::new(2.0_f32, colors.border),
                     );
                 }
             });
     }
 
     fn empty(&mut self, ui: &mut egui::Ui) {
+        let colors = self.theme.palette();
         let l = self.locale;
         ui.horizontal(|ui| {
             eyebrow(ui, l.tr("YOUR SPACE FOR RECORDINGS"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 egui::Frame::new()
-                    .fill(SOFT)
+                    .fill(colors.soft)
                     .corner_radius(20.0)
                     .inner_margin(egui::Margin::symmetric(12, 5))
                     .show(ui, |ui| {
                         ui.label(
                             RichText::new(l.tr("100% local"))
-                                .color(ACCENT)
+                                .color(colors.accent)
                                 .size(12.0)
                                 .strong(),
                         );
@@ -920,48 +885,51 @@ impl App {
         ui.label(
             RichText::new(l.tr("One phrase that matters."))
                 .size(headline)
-                .color(ACCENT)
+                .color(colors.accent)
                 .strong(),
         );
         ui.add_space(13.0);
-        ui.label(RichText::new(l.tr("Turn lectures, interviews and voice notes into text.\nFind what matters — and listen from that exact moment.")).size(17.0).color(MUTED));
+        ui.label(RichText::new(l.tr("Turn lectures, interviews and voice notes into text.\nFind what matters — and listen from that exact moment.")).size(17.0).color(colors.muted));
         ui.add_space(28.0);
         let (rect, response) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), 172.0), egui::Sense::click());
         let painter = ui.painter_at(rect);
-        painter.rect_filled(
-            rect.translate(Vec2::new(0.0, 4.0)),
-            16.0,
-            Color32::from_rgb(235, 236, 245),
-        );
-        painter.rect_filled(rect, 16.0, PANEL);
+        painter.rect_filled(rect.translate(Vec2::new(0.0, 4.0)), 16.0, colors.shadow);
+        painter.rect_filled(rect, 16.0, colors.panel);
         painter.rect_stroke(
             rect,
             16.0,
-            Stroke::new(1.5_f32, if response.hovered() { ACCENT } else { BORDER }),
+            Stroke::new(
+                1.5_f32,
+                if response.hovered() {
+                    colors.accent
+                } else {
+                    colors.border
+                },
+            ),
             egui::StrokeKind::Inside,
         );
         let icon = rect.left_top() + Vec2::new(54.0, 61.0);
         painter.rect_filled(
             egui::Rect::from_center_size(icon, Vec2::splat(54.0)),
             14.0,
-            SOFT,
+            colors.soft,
         );
         painter.line_segment(
             [icon + Vec2::new(0.0, 9.0), icon - Vec2::new(0.0, 10.0)],
-            Stroke::new(2.0_f32, ACCENT),
+            Stroke::new(2.0_f32, colors.accent),
         );
         painter.line_segment(
             [icon - Vec2::new(7.0, 3.0), icon - Vec2::new(0.0, 10.0)],
-            Stroke::new(2.0_f32, ACCENT),
+            Stroke::new(2.0_f32, colors.accent),
         );
         painter.line_segment(
             [icon + Vec2::new(7.0, -3.0), icon - Vec2::new(0.0, 10.0)],
-            Stroke::new(2.0_f32, ACCENT),
+            Stroke::new(2.0_f32, colors.accent),
         );
         painter.line_segment(
             [icon + Vec2::new(-10.0, 13.0), icon + Vec2::new(10.0, 13.0)],
-            Stroke::new(2.0_f32, ACCENT),
+            Stroke::new(2.0_f32, colors.accent),
         );
         let text_x = rect.left() + 100.0;
         painter.text(
@@ -969,47 +937,47 @@ impl App {
             egui::Align2::LEFT_CENTER,
             l.tr("Drop your recording here"),
             FontId::proportional(21.0),
-            TEXT,
+            colors.text,
         );
         painter.text(
             egui::pos2(text_x, rect.top() + 80.0),
             egui::Align2::LEFT_CENTER,
             l.tr("Audio or video. We’ll find the words."),
             FontId::proportional(14.0),
-            MUTED,
+            colors.muted,
         );
         let button = egui::Rect::from_min_size(
             egui::pos2(rect.right() - 166.0, rect.top() + 42.0),
             Vec2::new(140.0, 42.0),
         );
-        painter.rect_filled(button, 9.0, ACCENT);
+        painter.rect_filled(button, 9.0, colors.accent);
         painter.text(
             button.center(),
             egui::Align2::CENTER_CENTER,
             l.tr("Choose file"),
             FontId::proportional(14.0),
-            PANEL,
+            colors.on_accent,
         );
         painter.line_segment(
             [
                 egui::pos2(rect.left() + 26.0, rect.bottom() - 47.0),
                 egui::pos2(rect.right() - 26.0, rect.bottom() - 47.0),
             ],
-            Stroke::new(1.0_f32, BORDER),
+            Stroke::new(1.0_f32, colors.border),
         );
         painter.text(
             egui::pos2(rect.left() + 28.0, rect.bottom() - 23.0),
             egui::Align2::LEFT_CENTER,
             "MP3   WAV   M4A   OGG   MP4   MKV",
             FontId::proportional(11.0),
-            MUTED,
+            colors.muted,
         );
         painter.text(
             egui::pos2(rect.right() - 28.0, rect.bottom() - 23.0),
             egui::Align2::RIGHT_CENTER,
             l.tr("No cloud uploads"),
             FontId::proportional(12.0),
-            ACCENT,
+            colors.accent,
         );
         if response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1037,18 +1005,23 @@ impl App {
                 ),
             ]) {
                 egui::Frame::new()
-                    .fill(PANEL)
-                    .stroke(Stroke::new(1.0_f32, BORDER))
+                    .fill(colors.panel)
+                    .stroke(Stroke::new(1.0_f32, colors.border))
                     .corner_radius(12.0)
                     .inner_margin(16.0)
                     .show(column, |ui| {
                         ui.set_min_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(number).color(ACCENT).size(12.0).strong());
+                            ui.label(
+                                RichText::new(number)
+                                    .color(colors.accent)
+                                    .size(12.0)
+                                    .strong(),
+                            );
                             ui.label(RichText::new(title).strong().size(14.0));
                         });
                         ui.add_space(7.0);
-                        ui.label(RichText::new(body).color(MUTED).size(13.0));
+                        ui.label(RichText::new(body).color(colors.muted).size(13.0));
                     });
             }
         });
@@ -1056,11 +1029,12 @@ impl App {
         ui.label(
             RichText::new(l.tr("No account. No subscription. At your own pace."))
                 .size(12.0)
-                .color(MUTED),
+                .color(colors.muted),
         );
     }
 
     fn content(&mut self, ui: &mut egui::Ui) {
+        let colors = self.theme.palette();
         let l = self.locale;
         let title = self
             .source
@@ -1101,7 +1075,7 @@ impl App {
                             Vec2::splat(14.0),
                         ),
                         Icon::Down,
-                        TEXT,
+                        colors.text,
                     );
                 });
             });
@@ -1116,7 +1090,7 @@ impl App {
                         language_name(l, &document.language),
                         document.model
                     ))
-                    .color(MUTED)
+                    .color(colors.muted)
                     .small(),
                 );
             } else if let Some(audio) = &self.audio {
@@ -1126,7 +1100,7 @@ impl App {
                         clock(audio.duration()),
                         l.tr("Ready to transcribe")
                     ))
-                    .color(MUTED)
+                    .color(colors.muted)
                     .small(),
                 );
             }
@@ -1136,13 +1110,13 @@ impl App {
             ui.add_space(50.0);
             ui.label(RichText::new(l.tr("Recording opened")).size(25.0));
             ui.add_space(8.0);
-            ui.label(RichText::new(l.tr("Choose a model and speech language, then click\n“Transcribe recording”. Your text stays on this computer.")).color(MUTED).size(17.0));
+            ui.label(RichText::new(l.tr("Choose a model and speech language, then click\n“Transcribe recording”. Your text stays on this computer.")).color(colors.muted).size(17.0));
             ui.add_space(16.0);
             ui.label(
                 RichText::new(l.tr(
                     "Choose Small for better accuracy.\nTiny is useful for a quick first try.",
                 ))
-                .color(MUTED)
+                .color(colors.muted)
                 .size(14.0),
             );
             return;
@@ -1174,7 +1148,7 @@ impl App {
                     } else {
                         format!("{} / {}", self.match_cursor + 1, self.matches.len())
                     })
-                    .color(MUTED)
+                    .color(colors.muted)
                     .small(),
                 )
                 .truncate(),
@@ -1193,7 +1167,7 @@ impl App {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(l.tr("Click a segment to listen"))
-                    .color(MUTED)
+                    .color(colors.muted)
                     .small(),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1217,7 +1191,8 @@ impl App {
                 if !self.query.trim().is_empty() && self.matches.is_empty() {
                     ui.add_space(20.0);
                     ui.label(
-                        RichText::new(l.tr("No matches. Try part of the phrase.")).color(MUTED),
+                        RichText::new(l.tr("No matches. Try part of the phrase."))
+                            .color(colors.muted),
                     );
                 }
                 for (i, segment) in document.segments.iter().enumerate() {
@@ -1230,9 +1205,9 @@ impl App {
                         && position >= segment.start
                         && position < segment.end;
                     let fill = if current_match {
-                        SOFT
+                        colors.soft
                     } else if playing {
-                        Color32::from_rgb(240, 243, 253)
+                        colors.soft
                     } else {
                         Color32::TRANSPARENT
                     };
@@ -1247,12 +1222,17 @@ impl App {
                                     egui::Label::new(
                                         RichText::new(clock(segment.start))
                                             .monospace()
-                                            .color(if matched || playing { ACCENT } else { MUTED })
+                                            .color(if matched || playing {
+                                                colors.accent
+                                            } else {
+                                                colors.muted
+                                            })
                                             .size(13.0),
                                     ),
                                 );
                                 ui.add(
-                                    egui::Label::new(highlight(&segment.text, &self.query)).wrap(),
+                                    egui::Label::new(highlight(&segment.text, &self.query, colors))
+                                        .wrap(),
                                 );
                             });
                             ui.set_min_width(ui.available_width());
@@ -1277,7 +1257,8 @@ impl App {
                 }
                 if document.segments.is_empty() {
                     ui.label(
-                        RichText::new(l.tr("No speech was found in this recording")).color(MUTED),
+                        RichText::new(l.tr("No speech was found in this recording"))
+                            .color(colors.muted),
                     );
                 }
             });
@@ -1292,6 +1273,7 @@ impl App {
 
 impl App {
     pub fn draw(&mut self, ctx: &egui::Context) {
+        let colors = self.theme.palette();
         let l = self.locale;
         let settings_before = self.current_settings();
         self.poll();
@@ -1361,17 +1343,13 @@ impl App {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(BG)
+                    .fill(colors.bg)
                     .inner_margin(egui::Margin::symmetric(34, 26)),
             )
             .show(ctx, |ui| {
                 if let Some((notice, error)) = self.notice.clone() {
                     egui::Frame::new()
-                        .fill(if error {
-                            Color32::from_rgb(255, 235, 231)
-                        } else {
-                            SOFT
-                        })
+                        .fill(if error { colors.error_bg } else { colors.soft })
                         .corner_radius(6.0)
                         .inner_margin(12.0)
                         .show(ui, |ui| {
@@ -1395,7 +1373,7 @@ impl App {
                     });
                     ui.add(
                         egui::ProgressBar::new(self.progress)
-                            .fill(ACCENT)
+                            .fill(colors.accent)
                             .show_percentage()
                             .desired_height(4.0),
                     );
@@ -1415,15 +1393,11 @@ impl App {
                 egui::Id::new("drop_overlay"),
             ));
             let rect = ctx.content_rect().shrink(12.0);
-            painter.rect_filled(
-                rect,
-                14.0,
-                Color32::from_rgba_unmultiplied(245, 243, 255, 248),
-            );
+            painter.rect_filled(rect, 14.0, colors.soft);
             painter.rect_stroke(
                 rect,
                 14.0,
-                Stroke::new(2.0_f32, ACCENT),
+                Stroke::new(2.0_f32, colors.accent),
                 egui::StrokeKind::Inside,
             );
             painter.text(
@@ -1435,10 +1409,13 @@ impl App {
                     l.tr("Release the file to open it")
                 },
                 FontId::proportional(25.0),
-                ACCENT,
+                colors.accent,
             );
         }
         let settings_after = self.current_settings();
+        if settings_before.theme != settings_after.theme {
+            self.theme.apply(ctx);
+        }
         if settings_before != settings_after {
             if let Err(error) = settings_after.save(&self.storage) {
                 self.notice = Some((format!("Could not save settings: {error:#}"), true));
@@ -1467,14 +1444,16 @@ impl eframe::App for App {
 }
 
 fn eyebrow(ui: &mut egui::Ui, text: &str) {
-    ui.label(RichText::new(text).color(MUTED).size(11.0).strong());
+    let colors = Theme::from_ui(ui).palette();
+    ui.label(RichText::new(text).color(colors.muted).size(11.0).strong());
 }
 
 fn text_action(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let colors = Theme::from_ui(ui).palette();
     // Small buttons remove vertical padding, which clips their rounded outlines
     // against the sidebar footer. Text actions keep a full hit area and no outline.
     ui.add(
-        egui::Button::new(RichText::new(text).size(13.0).color(ACCENT))
+        egui::Button::new(RichText::new(text).size(13.0).color(colors.accent))
             .frame(false)
             .min_size(Vec2::new(0.0, 28.0)),
     )
@@ -1499,20 +1478,21 @@ fn status_line(ui: &mut egui::Ui, text: &str, color: Color32) {
 }
 
 fn recording_item(ui: &mut egui::Ui, title: &str, summary: &str, selected: bool) -> egui::Response {
+    let colors = Theme::from_ui(ui).palette();
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 60.0), egui::Sense::click());
     let fill = if selected {
-        SOFT
+        colors.soft
     } else if response.hovered() {
-        BG
+        colors.bg
     } else {
-        PANEL
+        colors.panel
     };
     ui.painter().rect(
         rect,
         8.0,
         fill,
-        Stroke::new(1.0_f32, BORDER),
+        Stroke::new(1.0_f32, colors.border),
         egui::StrokeKind::Inside,
     );
     let mut child = ui.new_child(
@@ -1524,13 +1504,13 @@ fn recording_item(ui: &mut egui::Ui, title: &str, summary: &str, selected: bool)
     child.spacing_mut().item_spacing.y = 3.0;
     child.add(
         egui::Label::new(RichText::new(title).size(14.0).color(if selected {
-            ACCENT
+            colors.accent
         } else {
-            TEXT
+            colors.text
         }))
         .truncate(),
     );
-    child.add(egui::Label::new(RichText::new(summary).size(12.0).color(MUTED)).truncate());
+    child.add(egui::Label::new(RichText::new(summary).size(12.0).color(colors.muted)).truncate());
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), title)
     });
@@ -1589,6 +1569,7 @@ fn paint_icon(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: Colo
 }
 
 fn icon_button(ui: &mut egui::Ui, icon: Icon, hint: &str) -> egui::Response {
+    let colors = Theme::from_ui(ui).palette();
     let (rect, response) = ui.allocate_exact_size(Vec2::new(28.0, 24.0), egui::Sense::click());
     let visual = ui.style().interact(&response);
     ui.painter().rect(
@@ -1598,17 +1579,22 @@ fn icon_button(ui: &mut egui::Ui, icon: Icon, hint: &str) -> egui::Response {
         visual.bg_stroke,
         egui::StrokeKind::Inside,
     );
-    paint_icon(ui.painter(), rect, icon, TEXT);
+    paint_icon(ui.painter(), rect, icon, colors.text);
     response
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), hint));
     response.on_hover_text(hint)
 }
 
 fn icon_text_button(ui: &mut egui::Ui, text: &str, icon: Icon) -> egui::Response {
+    let colors = Theme::from_ui(ui).palette();
     let response = ui.add(
-        egui::Button::new(RichText::new(format!("    {text}")).color(PANEL).strong())
-            .fill(ACCENT)
-            .min_size(Vec2::new(112.0, 38.0)),
+        egui::Button::new(
+            RichText::new(format!("    {text}"))
+                .color(colors.on_accent)
+                .strong(),
+        )
+        .fill(colors.accent)
+        .min_size(Vec2::new(112.0, 38.0)),
     );
     paint_icon(
         ui.painter(),
@@ -1617,15 +1603,15 @@ fn icon_text_button(ui: &mut egui::Ui, text: &str, icon: Icon) -> egui::Response
             Vec2::splat(16.0),
         ),
         icon,
-        PANEL,
+        colors.on_accent,
     );
     response
 }
 
-fn highlight(text: &str, query: &str) -> egui::text::LayoutJob {
+fn highlight(text: &str, query: &str, colors: Palette) -> egui::text::LayoutJob {
     let normal = egui::TextFormat {
         font_id: FontId::proportional(17.0),
-        color: TEXT,
+        color: colors.text,
         ..Default::default()
     };
     let mut job = egui::text::LayoutJob::default();
@@ -1658,8 +1644,8 @@ fn highlight(text: &str, query: &str) -> egui::text::LayoutJob {
             &text[original_start..original_end],
             0.0,
             egui::TextFormat {
-                background: Color32::from_rgb(255, 234, 166),
-                color: TEXT,
+                background: colors.highlight,
+                color: colors.highlight_text,
                 ..normal.clone()
             },
         );
@@ -1672,6 +1658,94 @@ fn highlight(text: &str, query: &str) -> egui::text::LayoutJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "Bounded offscreen screenshot generation; set SCRIBE_SEEK_CAPTURE_DIR"]
+    fn capture_localized_light_and_dark_interfaces() {
+        use egui_software_backend::{BufferMutRef, ColorFieldOrder, EguiSoftwareRender};
+        let output = std::path::PathBuf::from(
+            std::env::var_os("SCRIBE_SEEK_CAPTURE_DIR").expect("capture output directory"),
+        );
+        assert!(output.is_absolute(), "capture output must be absolute");
+        std::fs::create_dir_all(&output).unwrap();
+        for (file, theme, locale, settings) in [
+            ("main-light.png", Theme::Light, Locale::English, false),
+            ("main-dark-russian.png", Theme::Dark, Locale::Russian, false),
+            ("settings-light.png", Theme::Light, Locale::English, true),
+            (
+                "settings-dark-french.png",
+                Theme::Dark,
+                Locale::French,
+                true,
+            ),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let storage = Storage::at(directory.path().to_owned()).unwrap();
+            Settings {
+                theme,
+                ui_language: locale,
+                check_updates_on_startup: false,
+                ..Default::default()
+            }
+            .save(&storage)
+            .unwrap();
+            let context = egui::Context::default();
+            let mut app = App::new(&context, storage, None);
+            app.show_settings = settings;
+            let document = crate::transcript::tests::fixture();
+            app.source = Some(document.source.clone());
+            app.document = Some(document.clone());
+            app.library.push(document);
+            let (width, height) = (1180, 800);
+            let mut pending = egui::TexturesDelta::default();
+            let mut last = None;
+            for frame in 0..4 {
+                let mut output = context.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            Vec2::new(width as f32, height as f32),
+                        )),
+                        time: Some(frame as f64 / 60.0),
+                        ..Default::default()
+                    },
+                    |context| app.draw(context),
+                );
+                pending.append(std::mem::take(&mut output.textures_delta));
+                last = Some(output);
+            }
+            let last = last.unwrap();
+            let primitives = context.tessellate(last.shapes, last.pixels_per_point);
+            let mut pixels = vec![[0_u8; 4]; width * height];
+            EguiSoftwareRender::new(ColorFieldOrder::Rgba).render(
+                &mut BufferMutRef::new(&mut pixels, width, height),
+                &primitives,
+                &pending,
+                1.0,
+            );
+            let path = output.join(file);
+            let temporary = path.with_extension("png.partial");
+            let mut encoder = png::Encoder::new(
+                std::fs::File::create(&temporary).unwrap(),
+                width as u32,
+                height as u32,
+            );
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer
+                .write_image_data(bytemuck::cast_slice(&pixels))
+                .unwrap();
+            writer.finish().unwrap();
+            std::fs::rename(temporary, &path).unwrap();
+            eprintln!(
+                "Captured {}: {theme:?}, {locale:?}, CPU software renderer, four finite frames",
+                path.display()
+            );
+        }
+    }
+
     #[cfg(windows)]
     #[test]
     fn cpu_renderer_retains_font_uploads_and_draws_text_at_native_scales() {
@@ -1770,7 +1844,12 @@ mod tests {
         }
         app.source = Some(app.library[0].source.clone());
         app.document = Some(app.library[0].clone());
-        for installed in [false, true] {
+        for (theme, installed) in [Theme::Light, Theme::Dark]
+            .into_iter()
+            .flat_map(|theme| [false, true].map(move |installed| (theme, installed)))
+        {
+            app.theme = theme;
+            theme.apply(&ctx);
             if installed {
                 for model in MODELS {
                     std::fs::File::create(storage.model_path(model.id))
@@ -1845,7 +1924,7 @@ mod tests {
             ("中文音频", "文"),
             ("😀 Hello", "HELLO"),
         ] {
-            let job = highlight(text, query);
+            let job = highlight(text, query, Theme::Light.palette());
             assert_eq!(job.text, text);
             assert!(
                 job.sections

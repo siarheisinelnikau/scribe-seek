@@ -46,7 +46,10 @@ fn main() -> anyhow::Result<()> {
         Err(error) => {
             rfd::MessageDialog::new()
                 .set_title("Scribe Seek")
-                .set_description(format!("Could not open the data directory:\n{error:#}"))
+                .set_description(format!(
+                    "{}:\n{error:#}",
+                    scribe_seek::i18n::Locale::English.tr("Could not open the data directory")
+                ))
                 .set_level(rfd::MessageLevel::Error)
                 .show();
             return Ok(());
@@ -72,7 +75,10 @@ fn main() -> anyhow::Result<()> {
     if let Err(error) = result {
         rfd::MessageDialog::new()
             .set_title("Scribe Seek")
-            .set_description(format!("Could not start Scribe Seek:\n{error:#}"))
+            .set_description(format!(
+                "{}:\n{error:#}",
+                locale.tr("Could not start Scribe Seek")
+            ))
             .set_level(rfd::MessageLevel::Error)
             .show();
     }

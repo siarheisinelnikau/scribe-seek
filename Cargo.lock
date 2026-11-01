@@ -3054,6 +3054,7 @@ dependencies = [
  "egui_software_backend",
  "ogg",
  "opus",
+ "png",
  "rfd",
  "rodio",
  "rubato",

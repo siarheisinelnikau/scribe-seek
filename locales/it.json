@@ -188,5 +188,9 @@
   "Could not wait for the application to close": "Impossibile attendere la chiusura dell’applicazione",
   "The application did not close in time": "L’applicazione non si è chiusa in tempo",
   "Dismiss": "Chiudi",
-  "Native language name": "Italiano"
+  "Native language name": "Italiano",
+  "Appearance": "Aspetto",
+  "Light": "Chiaro",
+  "Dark": "Scuro",
+  "Could not start Scribe Seek": "Impossibile avviare Scribe Seek"
 }

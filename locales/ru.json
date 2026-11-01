@@ -188,5 +188,9 @@
   "Could not wait for the application to close": "Не удалось дождаться закрытия приложения",
   "The application did not close in time": "Приложение не закрылось вовремя",
   "Dismiss": "Закрыть",
-  "Native language name": "Русский"
+  "Native language name": "Русский",
+  "Appearance": "Оформление",
+  "Light": "Светлая",
+  "Dark": "Тёмная",
+  "Could not start Scribe Seek": "Не удалось запустить Scribe Seek"
 }

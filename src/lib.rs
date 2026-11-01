@@ -8,6 +8,7 @@ pub mod model;
 pub mod playback;
 pub mod settings;
 pub mod storage;
+pub mod theme;
 pub mod transcribe;
 pub mod transcript;
 pub mod updater;
