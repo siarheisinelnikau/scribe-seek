@@ -4,21 +4,23 @@ A native Rust desktop app that turns long audio or video recordings into searcha
 transcripts. Drop a file, find a phrase, and click a segment to play from its timestamp.
 Speech recognition runs locally with Whisper / whisper.cpp.
 
-**[Download ScribeSeek-v0.1.2.exe](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.1.2/ScribeSeek-v0.1.2.exe)**
-· [Portable ZIP](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.1.2/ScribeSeek-v0.1.2.zip)
+**[Download ScribeSeek-v0.2.0.exe](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.2.0/ScribeSeek-v0.2.0.exe)**
+· [Portable ZIP](https://github.com/siarheisinelnikau/scribe-seek/releases/download/v0.2.0/ScribeSeek-v0.2.0.zip)
 · [All releases](https://github.com/siarheisinelnikau/scribe-seek/releases)
 
 Windows 10/11 x64. No installer, Python or FFmpeg required.
 
-Screenshots show v0.1.1. Version 0.1.2 keeps this layout and replaces the Windows
-renderer and application icon.
+Screenshots below show v0.2.0 client areas, rendered by the application components
+and production CPU rasterizer with an isolated sample transcript.
 
-![Scribe Seek searching an actual JFK sample transcript, with matching phrases and timestamp playback](docs/screenshots/transcript-search.png)
+![Scribe Seek in the light theme with a saved sample transcript](docs/screenshots/v0.2.0/main-light.png)
+
+![Scribe Seek in the dark theme with the Russian interface](docs/screenshots/v0.2.0/main-dark-russian.png)
 
 ## Quick start
 
 1. Download the standalone Windows EXE from [Releases](https://github.com/siarheisinelnikau/scribe-seek/releases/latest).
-2. Run `ScribeSeek-v0.1.2.exe`.
+2. Run `ScribeSeek-v0.2.0.exe`.
 3. Choose a model and select **Download model**. Tiny is useful for a quick trial;
    Small generally provides better recognition. Downloads are verified by size and SHA-256.
 4. Drop a recording into the window or select **New recording**.
@@ -33,6 +35,9 @@ Transcripts are saved in the local library; playback needs the original media fi
 The interface defaults to English. **Settings → Interface language** offers English,
 Russian, French, German, Spanish and Italian. Language changes apply immediately and
 persist between sessions, independently of the speech recognition language.
+**Settings → Appearance → Light / Dark** switches the full application palette
+immediately and saves the choice. Existing settings keep their language, model
+and startup-update preference, with the light theme as the migration default.
 Russian interface text is confined to localization resources. Project documentation,
 source comments, internal messages and release notes are written in English.
 
@@ -80,7 +85,7 @@ The default data directory is `%LOCALAPPDATA%\ScribeSeek`:
 
 ```text
 ScribeSeek/
-  settings.json # Interface language, speech language and selected model
+  settings.json # Theme, interface/speech languages, selected model and startup update checks
   models/       # Downloaded Whisper models
   transcripts/  # Text, timestamps and original media paths
 ```
@@ -94,7 +99,9 @@ The app will store its data in `scribe-seek-data` beside it. You can also set
 `SCRIBE_SEEK_DATA_DIR` to choose a data directory explicitly.
 Library files are ordinary, unencrypted JSON. Original recordings are not copied.
 
-![Scribe Seek Settings showing interface language, model storage and the data folder](docs/screenshots/settings-storage.png)
+![Scribe Seek Settings with saved Light and Dark appearance choices and interface language](docs/screenshots/v0.2.0/settings-light.png)
+
+![Scribe Seek Settings in French with the dark theme](docs/screenshots/v0.2.0/settings-dark-french.png)
 
 ## In-app updates
 
@@ -201,7 +208,7 @@ with isolated test executables. Run `cargo run --release --locked --example chec
 to check the release API without opening the UI.
 
 Tests cover transcript search, audio, localization, speech languages, settings,
-storage, verified updates and layout. Layout checks cover 108 combinations of UI
+storage, verified updates and layout. Layout checks cover 216 combinations of theme, UI
 language, window size, selected model and model availability. Only the recording
 library scrolls; import, settings and recognition controls remain accessible.
 Manual checks include MP4/AAC import, Tiny download verification, actual recognition
@@ -269,3 +276,22 @@ frames, skipped unchanged scenes and retained-bitmap restores. Press `F12` to re
 counters without triggering a paint. With the variable unset, tracing is disabled.
 Window and EXE icons are built from `assets/app.svg`; regenerate their checked-in
 native assets with `python scripts/generate_icon.py` (requires Pillow).
+
+### Version 0.2.0 verification scope
+
+The localization validator checks all six catalogs and message placeholders. Focused
+regressions cover palette text contrast, switching framework/custom-control colors,
+legacy settings migration, preference persistence, Unicode transcript highlighting,
+and layouts in both themes at the supported window sizes. The four screenshots
+above come from a finite offscreen test using the real `App::draw` components and
+Windows production CPU rasterizer. They do not establish native-window lifecycle,
+OS dialog appearance, input responsiveness, playback or updater installation.
+Those interactive/runtime checks were not repeated for this version.
+
+To regenerate the isolated screenshots without opening a window or using audio/network:
+
+```powershell
+. ./scripts/build-env.ps1
+$env:SCRIBE_SEEK_CAPTURE_DIR = Join-Path $PWD 'docs/screenshots/v0.2.0'
+cargo test --locked --lib app::tests::capture_localized_light_and_dark_interfaces -- --ignored --exact --nocapture
+```

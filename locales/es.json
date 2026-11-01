@@ -192,5 +192,7 @@
   "Appearance": "Apariencia",
   "Light": "Claro",
   "Dark": "Oscuro",
-  "Could not start Scribe Seek": "No se pudo iniciar Scribe Seek"
+  "Could not start Scribe Seek": "No se pudo iniciar Scribe Seek",
+  "Update could not be completed. Try again.": "No se pudo completar la actualización. Inténtelo de nuevo.",
+  "Technical details": "Detalles técnicos"
 }

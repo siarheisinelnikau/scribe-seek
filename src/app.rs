@@ -202,6 +202,7 @@ impl App {
             .id(egui::Id::new("settings_window"))
             .open(&mut open)
             .default_width(510.0)
+            .default_height(660.0)
             .vscroll(true)
             .max_height(660.0)
             .resizable(false)
@@ -342,7 +343,13 @@ impl App {
                 }
             }
             UpdateState::Failed(error) => {
-                ui.label(RichText::new(l.message(&error)).color(colors.error));
+                ui.label(
+                    RichText::new(l.tr("Update could not be completed. Try again."))
+                        .color(colors.error),
+                );
+                ui.collapsing(l.tr("Technical details"), |ui| {
+                    ui.label(l.message(&error));
+                });
             }
         }
         if ui
@@ -1204,9 +1211,7 @@ impl App {
                     let playing = self.playback.ready()
                         && position >= segment.start
                         && position < segment.end;
-                    let fill = if current_match {
-                        colors.soft
-                    } else if playing {
+                    let fill = if current_match || playing {
                         colors.soft
                     } else {
                         Color32::TRANSPARENT
@@ -1700,14 +1705,14 @@ mod tests {
             let (width, height) = (1180, 800);
             let mut pending = egui::TexturesDelta::default();
             let mut last = None;
-            for frame in 0..4 {
+            for frame in 0..16 {
                 let mut output = context.run(
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(
                             egui::Pos2::ZERO,
                             Vec2::new(width as f32, height as f32),
                         )),
-                        time: Some(frame as f64 / 60.0),
+                        time: Some(frame as f64 / 30.0),
                         ..Default::default()
                     },
                     |context| app.draw(context),
@@ -1738,9 +1743,12 @@ mod tests {
                 .write_image_data(bytemuck::cast_slice(&pixels))
                 .unwrap();
             writer.finish().unwrap();
+            if path.exists() {
+                std::fs::remove_file(&path).unwrap();
+            }
             std::fs::rename(temporary, &path).unwrap();
             eprintln!(
-                "Captured {}: {theme:?}, {locale:?}, CPU software renderer, four finite frames",
+                "Captured {}: {theme:?}, {locale:?}, CPU software renderer, sixteen finite frames",
                 path.display()
             );
         }
@@ -1850,6 +1858,11 @@ mod tests {
         {
             app.theme = theme;
             theme.apply(&ctx);
+            if !installed {
+                for model in MODELS {
+                    let _ = std::fs::remove_file(storage.model_path(model.id));
+                }
+            }
             if installed {
                 for model in MODELS {
                     std::fs::File::create(storage.model_path(model.id))

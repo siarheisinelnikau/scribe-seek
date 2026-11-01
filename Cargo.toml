@@ -1,6 +1,6 @@
 [package]
 name = "scribe-seek"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.95"
 description = "Local audio transcription with searchable, playable timestamps"

@@ -10,60 +10,6 @@ pub enum Theme {
     Dark,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn contrast(a: Color32, b: Color32) -> f32 {
-        fn luminance(color: Color32) -> f32 {
-            let channel = |value: u8| {
-                let value = f32::from(value) / 255.0;
-                if value <= 0.04045 {
-                    value / 12.92
-                } else {
-                    ((value + 0.055) / 1.055).powf(2.4)
-                }
-            };
-            0.2126 * channel(color.r()) + 0.7152 * channel(color.g()) + 0.0722 * channel(color.b())
-        }
-        let a = luminance(a);
-        let b = luminance(b);
-        (a.max(b) + 0.05) / (a.min(b) + 0.05)
-    }
-
-    #[test]
-    fn both_palettes_keep_labels_actions_and_search_highlights_readable() {
-        for theme in [Theme::Light, Theme::Dark] {
-            let colors = theme.palette();
-            for surface in [colors.bg, colors.panel, colors.soft] {
-                for foreground in [colors.text, colors.muted, colors.accent] {
-                    assert!(
-                        contrast(foreground, surface) >= 4.5,
-                        "{theme:?}: {foreground:?} on {surface:?}"
-                    );
-                }
-            }
-            assert!(contrast(colors.on_accent, colors.accent) >= 4.5);
-            assert!(contrast(colors.highlight_text, colors.highlight) >= 4.5);
-            assert!(contrast(colors.error, colors.error_bg) >= 4.5);
-        }
-    }
-
-    #[test]
-    fn switching_themes_updates_framework_widgets_and_custom_palette_together() {
-        let context = egui::Context::default();
-        for theme in [Theme::Dark, Theme::Light, Theme::Dark] {
-            theme.apply(&context);
-            assert_eq!(context.style().visuals.dark_mode, theme == Theme::Dark);
-            assert_eq!(context.style().visuals.panel_fill, theme.palette().bg);
-            assert_eq!(
-                context.style().visuals.override_text_color,
-                Some(theme.palette().text)
-            );
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
 pub(crate) struct Palette {
     pub bg: Color32,
@@ -100,7 +46,7 @@ impl Theme {
                 accent: Color32::from_rgb(91, 78, 232),
                 text: Color32::from_rgb(28, 32, 51),
                 soft: Color32::from_rgb(238, 236, 255),
-                active: Color32::from_rgb(221, 216, 255),
+                active: Color32::from_rgb(235, 230, 255),
                 shadow: Color32::from_rgb(235, 236, 245),
                 error: Color32::from_rgb(175, 55, 55),
                 error_bg: Color32::from_rgb(255, 235, 231),
@@ -138,6 +84,10 @@ impl Theme {
     /// Apply only when the saved choice changes, never from an idle timer.
     pub(crate) fn apply(self, ctx: &egui::Context) {
         let colors = self.palette();
+        ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(match self {
+            Self::Light => egui::SystemTheme::Light,
+            Self::Dark => egui::SystemTheme::Dark,
+        }));
         ctx.set_theme(match self {
             Self::Light => egui::ThemePreference::Light,
             Self::Dark => egui::ThemePreference::Dark,
@@ -196,5 +146,59 @@ impl Theme {
             .text_styles
             .insert(egui::TextStyle::Small, FontId::proportional(13.0));
         ctx.set_style(style);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn contrast(a: Color32, b: Color32) -> f32 {
+        fn luminance(color: Color32) -> f32 {
+            let channel = |value: u8| {
+                let value = f32::from(value) / 255.0;
+                if value <= 0.04045 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * channel(color.r()) + 0.7152 * channel(color.g()) + 0.0722 * channel(color.b())
+        }
+        let a = luminance(a);
+        let b = luminance(b);
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    #[test]
+    fn both_palettes_keep_labels_actions_and_search_highlights_readable() {
+        for theme in [Theme::Light, Theme::Dark] {
+            let colors = theme.palette();
+            for surface in [colors.bg, colors.panel, colors.soft, colors.active] {
+                for foreground in [colors.text, colors.muted, colors.accent] {
+                    assert!(
+                        contrast(foreground, surface) >= 4.5,
+                        "{theme:?}: {foreground:?} on {surface:?}"
+                    );
+                }
+            }
+            assert!(contrast(colors.on_accent, colors.accent) >= 4.5);
+            assert!(contrast(colors.highlight_text, colors.highlight) >= 4.5);
+            assert!(contrast(colors.error, colors.error_bg) >= 4.5);
+        }
+    }
+
+    #[test]
+    fn switching_themes_updates_framework_widgets_and_custom_palette_together() {
+        let context = egui::Context::default();
+        for theme in [Theme::Dark, Theme::Light, Theme::Dark] {
+            theme.apply(&context);
+            assert_eq!(context.style().visuals.dark_mode, theme == Theme::Dark);
+            assert_eq!(context.style().visuals.panel_fill, theme.palette().bg);
+            assert_eq!(
+                context.style().visuals.override_text_color,
+                Some(theme.palette().text)
+            );
+        }
     }
 }
