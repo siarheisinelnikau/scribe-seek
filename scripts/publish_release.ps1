@@ -10,6 +10,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not read Cargo version' }
 $version = ($metadata.packages | Where-Object name -eq 'scribe-seek').version
 if (-not $version) { throw 'Missing application version' }
 $tag = "v$version"
+if ($isMainPush -and $env:RELEASE_COMMIT_MESSAGE.StartsWith('Release localization v')) {
+    $subject = ($env:RELEASE_COMMIT_MESSAGE -split "`n")[0].TrimEnd("`r")
+    if ($subject -cne "Release localization $tag") { throw 'The final release subject must match the Cargo version.' }
+}
 if ($isVersionTag -and $env:GITHUB_REF_NAME -ne $tag) { throw 'Version tag must match Cargo.toml' }
 $headers = @{
     Authorization = "Bearer $env:GITHUB_TOKEN"
