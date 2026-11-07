@@ -1,0 +1,63 @@
+name: Checked release builds
+'on':
+  workflow_call: {}
+permissions:
+  contents: read
+env:
+  CARGO_BUILD_JOBS: '2'
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Provision shared updater source
+      shell: pwsh
+      run: ./scripts/provision-shared-updater.ps1
+    - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+      with:
+        components: rustfmt, clippy
+        toolchain: stable
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+    - name: Get build-time libclang
+      run: python -m pip install --target .test-data/tooling libclang==18.1.1
+    - name: Format
+      run: cargo fmt --all -- --check
+    - name: Translation catalogs
+      run: python scripts/check_locales.py
+    - name: Clippy
+      run: |
+        . ./scripts/build-env.ps1
+        cargo clippy --locked --all-targets -- -D warnings
+    - name: Tests
+      run: |
+        . ./scripts/build-env.ps1
+        cargo test --locked
+    - name: Portable executable
+      run: |
+        . ./scripts/build-env.ps1
+        cargo build --release --locked
+    - name: Verify native update helper
+      run: ./scripts/test_update.ps1
+    - name: Validate version tag
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: pwsh
+      run: |
+        $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+        $version = ($metadata.packages | Where-Object name -eq 'scribe-seek').version
+        if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Version tag must match Cargo.toml' }
+    - name: Package
+      shell: pwsh
+      run: ./scripts/package_release.ps1
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ScribeSeek-Windows
+        path: |
+          dist/scribe-seek-windows-x64.exe
+          dist/ScribeSeek-*.exe
+          dist/ScribeSeek-*.zip
+          dist/SHA256SUMS.txt
+    permissions:
+      contents: read
+    timeout-minutes: 30

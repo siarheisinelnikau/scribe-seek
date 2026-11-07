@@ -1,0 +1,18 @@
+{
+  "repository": "siarheisinelnikau/scribe-seek",
+  "product": "ScribeSeek",
+  "kind": "desktop",
+  "assets": [
+    {
+      "name": "scribe-seek-windows-x64.exe"
+    },
+    {
+      "name": "ScribeSeek-v{version}.exe"
+    },
+    {
+      "name": "ScribeSeek-v{version}.zip"
+    }
+  ],
+  "notices": false,
+  "checksum_aliases": []
+}
